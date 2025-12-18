@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+    color-scheme: dark;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #020617;
+    overflow-x: hidden;
+}
+
+/* Custom scrollbar for a cleaner Glassmorphism look */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Animation utilities for the UI */
+@keyframes pulse-slow {
+    0%, 100% { opacity: 0.1; }
+    50% { opacity: 0.2; }
+}
+
+.animate-pulse-slow {
+    animation: pulse-slow 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
