@@ -16,7 +16,7 @@ export default function App() {
     const modelOptimization = useModelOptimization();
     
     // RAG functionality
-    const rag = useRAG(dataManagement.ragStatus);
+    const rag = useRAG(dataManagement.ragStatus, dataManagement.files);
     
     // Training analysis
     const trainingAnalysis = useTrainingAnalysis();
@@ -87,7 +87,7 @@ export default function App() {
                   isIndexing={dataManagement.isIndexing}
                   ragStatus={dataManagement.ragStatus}
                   onGenerateSyntheticData={dataManagement.generateSyntheticData}
-                  onIndexDocuments={dataManagement.indexDocuments}
+                  onIndexDocuments={() => dataManagement.indexDocuments(rag.indexDocuments)}
                 />
               )}
 
@@ -99,6 +99,8 @@ export default function App() {
                   chatHistory={rag.chatHistory}
                   isQuerying={rag.isQuerying}
                   onRagQuery={rag.queryRAG}
+                  modelLoadingProgress={rag.modelLoadingProgress}
+                  isModelLoading={rag.isModelLoading}
                 />
               )}
 

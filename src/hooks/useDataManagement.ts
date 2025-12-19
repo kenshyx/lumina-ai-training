@@ -16,8 +16,15 @@ export const useDataManagement = () => {
         setFilesState(prev => prev.filter(f => f.id !== id));
     };
 
-    const handleFileUpload = (file: File) => {
-        addFile({ name: file.name, id: Math.random() });
+    const handleFileUpload = async (file: File) => {
+        const fileId = Math.random();
+        try {
+            const content = await file.text();
+            addFile({ name: file.name, id: fileId, content });
+        } catch (err) {
+            console.error('Failed to read file:', err);
+            addFile({ name: file.name, id: fileId });
+        }
     };
 
     const generateSyntheticData = async () => {
@@ -42,17 +49,27 @@ export const useDataManagement = () => {
         }
     };
 
-    const indexDocuments = async () => {
+    const indexDocuments = async (ragIndexFunction?: (files: FileItem[]) => Promise<void>) => {
         if (files.length === 0) return;
         
         setIsIndexing(true);
         setRagStatus("Indexing...");
         
-        // Simulate indexing delay
-        setTimeout(() => {
-            setRagStatus("Knowledge Base Ready");
+        try {
+            if (ragIndexFunction) {
+                await ragIndexFunction(files);
+                setRagStatus("Knowledge Base Ready");
+            } else {
+                // Fallback: simulate indexing delay if RAG not available
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                setRagStatus("Knowledge Base Ready");
+            }
+        } catch (err) {
+            console.error('Indexing failed:', err);
+            setRagStatus("Indexing Failed");
+        } finally {
             setIsIndexing(false);
-        }, 1500);
+        }
     };
 
     const setFiles = (value: FileItem[] | ((prev: FileItem[]) => FileItem[])) => {

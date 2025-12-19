@@ -48,9 +48,16 @@ export const DataTab: React.FC<DataTabProps> = ({
               >
                   <Upload size={28} className="text-white/20 group-hover:text-blue-400 transition-all group-hover:-translate-y-1" />
                   <span className="text-xs font-bold text-white/40 group-hover:text-white transition-colors">Upload Training Data</span>
-                  <input id="file-upload" type="file" className="hidden" multiple onChange={(e) => {
+                  <input id="file-upload" type="file" className="hidden" multiple onChange={async (e) => {
                       if (e.target.files && e.target.files[0]) {
-                          setFiles([...files, { name: e.target.files[0].name, id: Math.random() }]);
+                          const file = e.target.files[0];
+                          try {
+                              const content = await file.text();
+                              setFiles([...files, { name: file.name, id: Math.random(), content }]);
+                          } catch (err) {
+                              console.error('Failed to read file:', err);
+                              setFiles([...files, { name: file.name, id: Math.random() }]);
+                          }
                       }
                   }} />
               </button>
