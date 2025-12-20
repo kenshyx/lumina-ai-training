@@ -57,6 +57,20 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [
+      wasm(),
+      topLevelAwait(),
+      nodePolyfills({
+        globals: {
+          Buffer: true,
+          global: true,
+          process: true,
+        },
+        include: ['path', 'util', 'stream', 'buffer', 'process'],
+        exclude: ['module'],
+        protocolImports: true,
+      }),
+    ],
   },
   server: {
     fs: {
