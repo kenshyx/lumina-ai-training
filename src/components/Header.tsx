@@ -10,7 +10,7 @@ export const Header: React.FC<HeaderProps> = ({ isTraining }) => (
           <LuminaLogo className="w-12 h-12 drop-shadow-lg group-hover:rotate-[15deg] transition-transform duration-500" />
           <div>
               <h1 className="text-3xl font-bold tracking-tighter transition-all group-hover:tracking-normal">
-                  Lumina <span className="text-blue-400 font-light italic">Trainer</span>
+                  Lumina <span className="text-blue-400 font-light italic">RAG</span>
               </h1>
               <p className="text-white/40 text-[10px] uppercase tracking-widest mt-1">LangChain × DuckDB-WASM × Transformers</p>
           </div>

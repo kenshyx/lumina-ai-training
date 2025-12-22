@@ -229,6 +229,37 @@ class DuckDBVectorStore {
         });
     }
 
+    async fileExists(fileName: string): Promise<boolean> {
+        if (!globalDuckDBConnection) {
+            return false;
+        }
+
+        try {
+            // Get all metadata and check for file name
+            const result = await globalDuckDBConnection.query(`
+                SELECT metadata
+                FROM ${this.tableName}
+            `);
+            
+            const rows = result.toArray();
+            for (const row of rows) {
+                try {
+                    const metadata = JSON.parse(row.metadata || '{}');
+                    // Check both metadata.source and metadata.loc.source
+                    if (metadata.loc?.source === fileName || metadata.source === fileName) {
+                        return true;
+                    }
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            }
+            return false;
+        } catch (err: any) {
+            console.error('[DuckDB] Error checking file existence:', err);
+            return false;
+        }
+    }
+
     async getStats(): Promise<{ totalDocuments: number; totalChunks: number; averageChunkLength: number }> {
         if (!globalDuckDBConnection) {
             return { totalDocuments: 0, totalChunks: 0, averageChunkLength: 0 };
@@ -256,8 +287,10 @@ class DuckDBVectorStore {
             allRows.forEach((row: any) => {
                 try {
                     const metadata = JSON.parse(row.metadata || '{}');
-                    if (metadata.loc?.source) {
-                        uniqueFiles.add(metadata.loc.source);
+                    // Check both loc.source and source for file name
+                    const fileName = metadata.loc?.source || metadata.source;
+                    if (fileName) {
+                        uniqueFiles.add(fileName);
                     }
                 } catch (e) {
                     // Ignore parse errors
@@ -423,6 +456,8 @@ let textSplitter: RecursiveCharacterTextSplitter | null = null;
 let model: any = null;
 let isInitialized = false;
 let isInitializing = false; // Prevent concurrent INIT messages
+let isModelLoading = false; // Track if model is currently loading
+let modelLoadPromise: Promise<void> | null = null; // Promise for model loading
 let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
 console.log('[RAG Worker] Worker script loaded');
@@ -493,7 +528,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
                     isInitialized = true;
                     console.log('[RAG Worker] Initialization complete, sending INIT_SUCCESS');
+                    
+                    // Fetch and send initial stats
+                    const stats = await vectorStore.getStats();
                     self.postMessage({ type: 'INIT_SUCCESS' });
+                    self.postMessage({ 
+                        type: 'STATS_RESULT', 
+                        payload: stats 
+                    });
                 } catch (err: any) {
                     console.error('[RAG Worker] Initialization error:', err);
                     self.postMessage({ 
@@ -515,38 +557,55 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                     return;
                 }
 
-                const onProgress = (progress: any) => {
-                    let progressValue = 0;
-                    if (typeof progress === 'number') {
-                        progressValue = progress;
-                    } else if (typeof progress === 'string') {
-                        const match = progress.match(/(\d+)%/);
-                        if (match) {
-                            progressValue = parseInt(match[1]) / 100;
-                        }
-                    } else if (progress && typeof progress === 'object') {
-                        if (progress.loaded !== undefined && progress.total !== undefined) {
-                            progressValue = progress.loaded / progress.total;
-                        } else if (progress.progress !== undefined) {
-                            progressValue = typeof progress.progress === 'number' 
-                                ? progress.progress 
-                                : progress.progress / 100;
-                        }
+                // If already loading, return the existing promise
+                if (isModelLoading && modelLoadPromise) {
+                    await modelLoadPromise;
+                    self.postMessage({ type: 'MODEL_LOADED' });
+                    return;
+                }
+
+                // Mark as loading and create loading promise
+                isModelLoading = true;
+                modelLoadPromise = (async () => {
+                    try {
+                        const onProgress = (progress: any) => {
+                            let progressValue = 0;
+                            if (typeof progress === 'number') {
+                                progressValue = progress;
+                            } else if (typeof progress === 'string') {
+                                const match = progress.match(/(\d+)%/);
+                                if (match) {
+                                    progressValue = parseInt(match[1]) / 100;
+                                }
+                            } else if (progress && typeof progress === 'object') {
+                                if (progress.loaded !== undefined && progress.total !== undefined) {
+                                    progressValue = progress.loaded / progress.total;
+                                } else if (progress.progress !== undefined) {
+                                    progressValue = typeof progress.progress === 'number' 
+                                        ? progress.progress 
+                                        : progress.progress / 100;
+                                }
+                            }
+                            
+                            const normalizedProgress = Math.max(0, Math.min(1, progressValue));
+                            self.postMessage({ 
+                                type: 'MODEL_PROGRESS', 
+                                payload: { progress: normalizedProgress } 
+                            });
+                        };
+
+                        model = await pipeline('text-generation', 'HuggingFaceTB/SmolLM2-360M-Instruct', {
+                            device: 'wasm',
+                            dtype: 'q8',
+                            progress_callback: onProgress,
+                        });
+                    } finally {
+                        isModelLoading = false;
+                        modelLoadPromise = null;
                     }
-                    
-                    const normalizedProgress = Math.max(0, Math.min(1, progressValue));
-                    self.postMessage({ 
-                        type: 'MODEL_PROGRESS', 
-                        payload: { progress: normalizedProgress } 
-                    });
-                };
+                })();
 
-                model = await pipeline('text-generation', 'HuggingFaceTB/SmolLM2-360M-Instruct', {
-                    device: 'wasm',
-                    dtype: 'q8',
-                    progress_callback: onProgress,
-                });
-
+                await modelLoadPromise;
                 self.postMessage({ type: 'MODEL_LOADED' });
                 break;
             }
@@ -588,7 +647,36 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                             continue;
                         }
                         
+                        // Check if file already exists in database
+                        const exists = await vectorStore.fileExists(file.name);
+                        if (exists) {
+                            console.log(`[RAG Worker] File "${file.name}" already indexed, skipping...`);
+                            self.postMessage({ 
+                                type: 'INDEX_PROGRESS', 
+                                payload: { 
+                                    fileName: file.name, 
+                                    chunkCount: 0,
+                                    skipped: true
+                                } 
+                            });
+                            continue;
+                        }
+                        
+                        // Create documents
                         const docs = await textSplitter.createDocuments([file.content]);
+                        
+                        // Ensure all chunks have the file name in metadata
+                        docs.forEach(doc => {
+                            if (!doc.metadata) {
+                                doc.metadata = {};
+                            }
+                            doc.metadata.source = file.name;
+                            if (!doc.metadata.loc) {
+                                doc.metadata.loc = {};
+                            }
+                            doc.metadata.loc.source = file.name;
+                        });
+                        
                         await vectorStore.addDocuments(docs);
                         
                         self.postMessage({ 
@@ -600,7 +688,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                         });
                     }
                     
+                    // Fetch and send updated stats after indexing
+                    const stats = await vectorStore.getStats();
                     self.postMessage({ type: 'INDEX_COMPLETE' });
+                    self.postMessage({ 
+                        type: 'STATS_RESULT', 
+                        payload: stats 
+                    });
                 } catch (err: any) {
                     self.postMessage({ 
                         type: 'ERROR', 
@@ -629,11 +723,76 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                 
                 conversationHistory.push({ role: 'user', content: query });
 
+                // Wait for model to load if it's currently loading
+                if (!model && isModelLoading && modelLoadPromise) {
+                    console.log('[RAG Worker] Model is loading, waiting for it to finish...');
+                    try {
+                        await modelLoadPromise;
+                        console.log('[RAG Worker] Model finished loading, proceeding with query');
+                    } catch (err) {
+                        console.error('[RAG Worker] Model loading failed:', err);
+                        // Continue to fallback mode
+                    }
+                }
+
+                // If model still not available after waiting, trigger load if not already loading
+                if (!model && !isModelLoading) {
+                    console.log('[RAG Worker] Model not loaded, triggering load...');
+                    // Send LOAD_MODEL message to self (but we'll handle it inline)
+                    // Actually, we should just load it here
+                    try {
+                        isModelLoading = true;
+                        modelLoadPromise = (async () => {
+                            try {
+                                const onProgress = (progress: any) => {
+                                    let progressValue = 0;
+                                    if (typeof progress === 'number') {
+                                        progressValue = progress;
+                                    } else if (progress && typeof progress === 'object') {
+                                        if (progress.loaded !== undefined && progress.total !== undefined) {
+                                            progressValue = progress.loaded / progress.total;
+                                        }
+                                    }
+                                    const normalizedProgress = Math.max(0, Math.min(1, progressValue));
+                                    self.postMessage({ 
+                                        type: 'MODEL_PROGRESS', 
+                                        payload: { progress: normalizedProgress } 
+                                    });
+                                };
+
+                                model = await pipeline('text-generation', 'HuggingFaceTB/SmolLM2-360M-Instruct', {
+                                    device: 'wasm',
+                                    dtype: 'q8',
+                                    progress_callback: onProgress,
+                                });
+                            } finally {
+                                isModelLoading = false;
+                                modelLoadPromise = null;
+                            }
+                        })();
+                        
+                        // Wait for model to load (with timeout)
+                        await Promise.race([
+                            modelLoadPromise,
+                            new Promise((_, reject) => 
+                                setTimeout(() => reject(new Error('Model loading timeout')), 60000)
+                            )
+                        ]);
+                        console.log('[RAG Worker] Model loaded successfully');
+                    } catch (err) {
+                        console.error('[RAG Worker] Failed to load model:', err);
+                        isModelLoading = false;
+                        modelLoadPromise = null;
+                        // Continue to fallback mode
+                    }
+                }
+
                 const results = await vectorStore.similaritySearch(query, 3);
                 const contextText = results
                     .map((doc) => doc.pageContent)
                     .join('\n\n');
 
+                // Only use fallback if model is definitely not available
                 if (!model) {
                     const response = results.length > 0
                         ? results.map((doc, idx) => `[${idx + 1}] ${doc.pageContent}`).join('\n\n')

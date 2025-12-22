@@ -8,7 +8,7 @@ type WorkerMessage =
     | { type: 'MODEL_LOADED' }
     | { type: 'MODEL_PROGRESS'; payload: { progress: number } }
     | { type: 'INDEX_COMPLETE' }
-    | { type: 'INDEX_PROGRESS'; payload: { fileName: string; chunkCount: number } }
+    | { type: 'INDEX_PROGRESS'; payload: { fileName: string; chunkCount: number; skipped?: boolean } }
     | { type: 'QUERY_RESULT'; payload: { response: string; isFallback: boolean } }
     | { type: 'QUERY_CHUNK'; payload: { chunk: string } }
     | { type: 'MEMORY_CLEARED' }
@@ -107,7 +107,11 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
                     break;
 
                 case 'INDEX_PROGRESS':
-                    console.log(`Indexed ${message.payload.chunkCount} chunks from ${message.payload.fileName}`);
+                    if (message.payload.skipped) {
+                        console.log(`Skipped ${message.payload.fileName} (already indexed)`);
+                    } else {
+                        console.log(`Indexed ${message.payload.chunkCount} chunks from ${message.payload.fileName}`);
+                    }
                     break;
 
                 case 'QUERY_CHUNK':

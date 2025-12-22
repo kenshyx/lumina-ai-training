@@ -1,4 +1,4 @@
-# Lumina Trainer
+# Lumina RAG
 
 A modern, browser-based RAG (Retrieval-Augmented Generation) application for building and querying knowledge bases with AI-powered chat capabilities. Built with React, TypeScript, and cutting-edge AI libraries running entirely in the browser.
 
@@ -61,7 +61,7 @@ A modern, browser-based RAG (Retrieval-Augmented Generation) application for bui
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd lumina-trainer
+   cd lumina-rag
    ```
 
 2. **Install dependencies**
@@ -169,7 +169,7 @@ The app is configured with:
 ## 📝 Project Structure
 
 ```
-lumina-trainer/
+lumina-rag/
 ├── src/
 │   ├── components/          # React components
 │   │   ├── Dashboard.tsx    # Document statistics and storage info
