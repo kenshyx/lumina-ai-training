@@ -2,6 +2,9 @@ import { useState, FormEvent, useRef, useEffect, useCallback } from 'react';
 
 import { ChatMessage, FileItem } from '../types';
 
+/**
+ * Message types sent from the RAG worker to the main thread.
+ */
 type WorkerMessage = 
     | { type: 'READY' }
     | { type: 'INIT_SUCCESS' }
@@ -17,7 +20,57 @@ type WorkerMessage =
     | { type: 'SYNTHETIC_GENERATED'; payload: { content: string; topic: string } }
     | { type: 'ERROR'; payload: { error: string; errorType?: string } };
 
-export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number = 500, chunkOverlap: number = 50) => {
+/**
+ * Return type for the useRAG hook.
+ */
+interface UseRAGReturn {
+    /** Current chat input value */
+    chatInput: string;
+    /** Function to update chat input */
+    setChatInput: (value: string) => void;
+    /** Array of chat messages */
+    chatHistory: ChatMessage[];
+    /** Whether a query is currently in progress */
+    isQuerying: boolean;
+    /** Function to index documents into the vector store */
+    indexDocuments: (filesToIndex: FileItem[]) => Promise<void>;
+    /** Model loading progress (0-1) */
+    modelLoadingProgress: number;
+    /** Whether the model is currently loading */
+    isModelLoading: boolean;
+    /** Document statistics from the vector store */
+    documentStats: { totalDocuments: number; totalChunks: number; averageChunkLength: number };
+    /** Function to refresh document statistics */
+    getStats: () => void;
+    /** Whether search is available (has documents or status is ready) */
+    canSearch: boolean;
+    /** Function to clear the database */
+    clearDatabase: () => Promise<void>;
+    /** Function to generate synthetic data */
+    generateSyntheticData: (topic: string) => Promise<string>;
+}
+
+/**
+ * Custom hook for managing RAG (Retrieval-Augmented Generation) functionality.
+ * 
+ * This hook manages the RAG worker, handles document indexing, query processing,
+ * and provides chat functionality with streaming responses. It maintains state
+ * for chat history, model loading, and document statistics.
+ * 
+ * @param ragStatus - Current status of the RAG system (e.g., "Idle", "Indexing...", "Knowledge Base Ready")
+ * @param files - Optional array of files to be indexed
+ * @param chunkSize - Size of text chunks for document splitting (default: 500)
+ * @param chunkOverlap - Overlap between chunks in characters (default: 50)
+ * @returns Object containing RAG state and functions
+ * 
+ * @example
+ * ```tsx
+ * const rag = useRAG("Knowledge Base Ready", files, 500, 50);
+ * await rag.indexDocuments(filesToIndex);
+ * rag.queryRAG(event);
+ * ```
+ */
+export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number = 500, chunkOverlap: number = 50): UseRAGReturn => {
     const [chatInput, setChatInput] = useState<string>("");
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [isQuerying, setIsQuerying] = useState<boolean>(false);
@@ -204,8 +257,9 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
                 }
             };
         } catch (err) {
-            console.error('[useRAG] Failed to create worker:', err);
-            setModelLoadError('Failed to create worker');
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('[useRAG] Failed to create worker:', error);
+            setModelLoadError(`Failed to create worker: ${error.message}`);
             return () => {}; // Return empty cleanup
         }
     }, []);
@@ -286,6 +340,15 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
         });
     }, [chunkSize, chunkOverlap]);
 
+    /**
+     * Handles RAG query submission from the chat interface.
+     * 
+     * This function processes user queries, sends them to the worker,
+     * and handles streaming responses. It automatically loads the model
+     * if needed and manages conversation history.
+     * 
+     * @param e - Form submission event
+     */
     const queryRAG = async (e: FormEvent) => {
         e.preventDefault();
         
@@ -321,8 +384,9 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
                 // Wait a bit for model to start loading, then proceed with query
                 // The query will wait for model if needed
             } catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
                 setIsModelLoading(false);
-                setModelLoadError('Failed to start model loading');
+                setModelLoadError(`Failed to start model loading: ${error.message}`);
             }
         }
 
@@ -342,6 +406,9 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
         });
     };
 
+    /**
+     * Clears the chat history and resets conversation memory in the worker.
+     */
     const clearChat = () => {
         setChatHistory([]);
         setChatInput("");
@@ -353,12 +420,20 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
         }
     };
 
+    /**
+     * Fetches and updates document statistics from the worker.
+     */
     const getStats = useCallback(() => {
         if (workerRef.current && isInitializedRef.current) {
             workerRef.current.postMessage({ type: 'GET_STATS' });
         }
     }, []);
 
+    /**
+     * Clears all indexed documents from the database.
+     * 
+     * @returns Promise that resolves when the database is cleared
+     */
     const clearDatabase = useCallback(async () => {
         if (!workerRef.current || !isInitializedRef.current) {
             console.warn('Cannot clear database: worker not initialized');
@@ -368,10 +443,19 @@ export const useRAG = (ragStatus: string, files?: FileItem[], chunkSize: number 
         try {
             workerRef.current.postMessage({ type: 'CLEAR_DATABASE' });
         } catch (err) {
-            console.error('Failed to clear database:', err);
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('Failed to clear database:', error);
+            // Error is logged but not thrown to prevent UI disruption
         }
     }, []);
 
+    /**
+     * Generates synthetic data using the text generation model.
+     * 
+     * @param topic - The topic for synthetic data generation
+     * @throws {Error} If worker is not available or generation fails
+     * @returns Promise that resolves to the generated content
+     */
     const generateSyntheticData = useCallback(async (topic: string): Promise<string> => {
         if (!workerRef.current) {
             throw new Error('Worker not created');

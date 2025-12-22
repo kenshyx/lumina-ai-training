@@ -3,16 +3,47 @@ import { Database, FileText, Layers, BarChart3 } from 'lucide-react';
 
 import { GlassCard } from './GlassCard';
 
+/**
+ * Props for the Dashboard component.
+ */
 interface DashboardProps {
+    /** Document statistics from the vector store */
     documentStats: {
+        /** Total number of unique documents indexed */
         totalDocuments: number;
+        /** Total number of document chunks */
         totalChunks: number;
+        /** Average character length of chunks */
         averageChunkLength: number;
     };
+    /** Current status of the RAG system */
     ragStatus: string;
+    /** Callback function to refresh statistics */
     onRefreshStats: () => void;
 }
 
+/**
+ * Dashboard component displaying RAG knowledge base statistics and storage information.
+ * 
+ * This component shows:
+ * - Total documents, chunks, and average chunk length
+ * - Current RAG system status
+ * - Storage information (vector store, embedding model, chunking strategy)
+ * 
+ * Statistics are automatically refreshed every 5 seconds.
+ * 
+ * @param props - Component props
+ * @returns The rendered Dashboard component
+ * 
+ * @example
+ * ```tsx
+ * <Dashboard
+ *   documentStats={{ totalDocuments: 10, totalChunks: 150, averageChunkLength: 450 }}
+ *   ragStatus="Knowledge Base Ready"
+ *   onRefreshStats={handleRefresh}
+ * />
+ * ```
+ */
 export const Dashboard: React.FC<DashboardProps> = ({
     documentStats,
     ragStatus,

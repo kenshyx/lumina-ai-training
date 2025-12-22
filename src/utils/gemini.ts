@@ -20,7 +20,8 @@ export const callGemini = async (prompt: string, systemInstruction: string = "")
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
             return typeof text === 'string' ? text : JSON.stringify(text);
         } catch (error) {
-            if (i === 4) throw error;
+            const err = error instanceof Error ? error : new Error(String(error));
+            if (i === 4) throw err;
             await new Promise(r => setTimeout(r, delay));
             delay *= 2;
         }

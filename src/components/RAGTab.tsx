@@ -5,19 +5,60 @@ import { ChatMessage } from '../types';
 import { GlassCard } from './GlassCard';
 import { ProgressBar } from './ProgressBar';
 
+/**
+ * Props for the RAGTab component.
+ */
 interface RAGTabProps {
+    /** Current RAG system status */
     ragStatus: string;
+    /** Current chat input value */
     chatInput: string;
+    /** Function to update chat input */
     setChatInput: (value: string) => void;
+    /** Array of chat messages */
     chatHistory: ChatMessage[];
+    /** Whether a query is currently in progress */
     isQuerying: boolean;
+    /** Callback function to handle query submission */
     onRagQuery: (e: FormEvent) => void;
+    /** Model loading progress (0-1) */
     modelLoadingProgress: number;
+    /** Whether the model is currently loading */
     isModelLoading: boolean;
+    /** Whether search is available (has documents) */
     canSearch: boolean;
+    /** Number of documents in the knowledge base */
     documentCount: number;
 }
 
+/**
+ * RAGTab component providing a chat interface for querying the knowledge base.
+ * 
+ * This component displays:
+ * - Chat history with user and assistant messages
+ * - Model loading progress
+ * - Query input with send button
+ * - Document count and search availability status
+ * 
+ * @param props - Component props
+ * @returns The rendered RAGTab component
+ * 
+ * @example
+ * ```tsx
+ * <RAGTab
+ *   ragStatus="Knowledge Base Ready"
+ *   chatInput={input}
+ *   setChatInput={setInput}
+ *   chatHistory={history}
+ *   isQuerying={false}
+ *   onRagQuery={handleQuery}
+ *   modelLoadingProgress={0.5}
+ *   isModelLoading={true}
+ *   canSearch={true}
+ *   documentCount={10}
+ * />
+ * ```
+ */
 export const RAGTab: React.FC<RAGTabProps> = ({
     ragStatus,
     chatInput,

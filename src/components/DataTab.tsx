@@ -3,16 +3,51 @@ import { Upload, Sparkles, Loader2, FileText, X } from 'lucide-react';
 import { FileItem } from '../types';
 import { GlassCard } from './GlassCard';
 
+/**
+ * Props for the DataTab component.
+ */
 interface DataTabProps {
+    /** Array of uploaded files */
     files: FileItem[];
+    /** Function to update the files list */
     setFiles: (value: FileItem[] | ((prev: FileItem[]) => FileItem[])) => void;
+    /** Whether synthetic data is currently being generated */
     isGeneratingData: boolean;
+    /** Whether documents are currently being indexed */
     isIndexing: boolean;
+    /** Current RAG system status */
     ragStatus: string;
+    /** Callback function to generate synthetic data */
     onGenerateSyntheticData: () => void;
+    /** Callback function to index documents */
     onIndexDocuments: () => void;
 }
 
+/**
+ * DataTab component for document upload, synthetic data generation, and indexing.
+ * 
+ * This component provides:
+ * - File upload interface
+ * - Synthetic data generation button
+ * - Display of staged files
+ * - Document indexing functionality
+ * 
+ * @param props - Component props
+ * @returns The rendered DataTab component
+ * 
+ * @example
+ * ```tsx
+ * <DataTab
+ *   files={files}
+ *   setFiles={setFiles}
+ *   isGeneratingData={false}
+ *   isIndexing={false}
+ *   ragStatus="Idle"
+ *   onGenerateSyntheticData={handleGenerate}
+ *   onIndexDocuments={handleIndex}
+ * />
+ * ```
+ */
 export const DataTab: React.FC<DataTabProps> = ({
     files,
     setFiles,
@@ -55,7 +90,9 @@ export const DataTab: React.FC<DataTabProps> = ({
                               const content = await file.text();
                               setFiles([...files, { name: file.name, id: Math.random(), content }]);
                           } catch (err) {
-                              console.error('Failed to read file:', err);
+                              const error = err instanceof Error ? err : new Error(String(err));
+                              console.error('Failed to read file:', error);
+                              // Add file without content if reading fails
                               setFiles([...files, { name: file.name, id: Math.random() }]);
                           }
                       }

@@ -31,10 +31,11 @@ export const useModelOptimization = (initialObjective: string = "General Purpose
                 text: suggestion.explanation || "Optimized settings based on objective."
             });
         } catch (err) {
-            console.error('Failed to optimize hyperparameters:', err);
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('Failed to optimize hyperparameters:', error);
             setAnalysisResult({
                 type: 'optimization',
-                text: "Failed to optimize. Please check your configuration."
+                text: `Failed to optimize: ${error.message}. Please check your configuration.`
             });
         } finally {
             setIsOptimizing(false);

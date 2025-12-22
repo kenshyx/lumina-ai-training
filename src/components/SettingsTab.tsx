@@ -3,17 +3,53 @@ import { Trash2, Database, FileX, RotateCcw, AlertTriangle, Scissors } from 'luc
 
 import { GlassCard } from './GlassCard';
 
+/**
+ * Props for the SettingsTab component.
+ */
 interface SettingsTabProps {
+    /** Current chunk size setting */
     chunkSize: number;
+    /** Function to update chunk size */
     setChunkSize: (value: number) => void;
+    /** Current chunk overlap setting */
     chunkOverlap: number;
+    /** Function to update chunk overlap */
     setChunkOverlap: (value: number) => void;
+    /** Callback function to clear the database */
     onClearDatabase: () => void;
+    /** Callback function to clear uploaded files */
     onClearFiles: () => void;
+    /** Number of indexed documents */
     documentCount: number;
+    /** Number of staged files */
     fileCount: number;
 }
 
+/**
+ * SettingsTab component for configuration and data management.
+ * 
+ * This component provides:
+ * - Chunking configuration (chunk size and overlap)
+ * - Data management controls (clear database, clear files, full reset)
+ * - Confirmation dialogs for destructive actions
+ * 
+ * @param props - Component props
+ * @returns The rendered SettingsTab component
+ * 
+ * @example
+ * ```tsx
+ * <SettingsTab
+ *   chunkSize={500}
+ *   setChunkSize={setChunkSize}
+ *   chunkOverlap={50}
+ *   setChunkOverlap={setChunkOverlap}
+ *   onClearDatabase={handleClearDB}
+ *   onClearFiles={handleClearFiles}
+ *   documentCount={10}
+ *   fileCount={5}
+ * />
+ * ```
+ */
 export const SettingsTab: React.FC<SettingsTabProps> = ({
     chunkSize,
     setChunkSize,
@@ -33,7 +69,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             await onClearDatabase();
             setShowClearConfirm(null);
         } catch (err) {
-            console.error('Failed to clear database:', err);
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('Failed to clear database:', error);
+            // Show error to user - could be enhanced with a toast notification
+            alert(`Failed to clear database: ${error.message}`);
         } finally {
             setIsClearing(false);
         }
@@ -51,7 +90,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             onClearFiles();
             setShowClearConfirm(null);
         } catch (err) {
-            console.error('Failed to clear all:', err);
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('Failed to clear all:', error);
+            // Show error to user - could be enhanced with a toast notification
+            alert(`Failed to reset: ${error.message}`);
         } finally {
             setIsClearing(false);
         }

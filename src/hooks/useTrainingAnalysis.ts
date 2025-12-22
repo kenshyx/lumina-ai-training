@@ -18,10 +18,11 @@ export const useTrainingAnalysis = () => {
             );
             setAnalysisResult({ type: 'loss', text: result });
         } catch (err) {
-            console.error('Failed to analyze loss:', err);
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('Failed to analyze loss:', error);
             setAnalysisResult({
                 type: 'loss',
-                text: "Failed to analyze loss trend."
+                text: `Failed to analyze loss trend: ${error.message}.`
             });
         } finally {
             setIsAnalyzing(false);

@@ -95,8 +95,9 @@ export default function App() {
                             content
                         });
                     } catch (err) {
-                        console.error('Failed to generate synthetic data:', err);
-                        alert('Failed to generate synthetic data. Make sure the model is loaded.');
+                        const error = err instanceof Error ? err : new Error(String(err));
+                        console.error('Failed to generate synthetic data:', error);
+                        alert(`Failed to generate synthetic data: ${error.message}. Make sure the model is loaded.`);
                     } finally {
                         dataManagement.setIsGeneratingData(false);
                     }

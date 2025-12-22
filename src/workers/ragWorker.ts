@@ -1,14 +1,16 @@
 import { HuggingFaceTransformersEmbeddings } from '@langchain/community/embeddings/huggingface_transformers';
 import { Document } from '@langchain/core/documents';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { pipeline, env, TextStreamer } from '@huggingface/transformers';
+import { pipeline, env, TextStreamer, TextGenerationPipeline, ProgressCallback } from '@huggingface/transformers';
 import * as duckdb from '@duckdb/duckdb-wasm';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.allowRemoteModels = true;
 
-// Worker message types
+/**
+ * Worker request message types for communication between main thread and worker.
+ */
 type WorkerRequest = 
     | { type: 'INIT' }
     | { type: 'LOAD_MODEL' }
@@ -19,22 +21,88 @@ type WorkerRequest =
     | { type: 'CLEAR_DATABASE' }
     | { type: 'GENERATE_SYNTHETIC'; payload: { topic: string } };
 
+/**
+ * DuckDB query result row type.
+ */
+interface DuckDBRow {
+    id?: number;
+    vector?: number[] | string;
+    text?: string;
+    metadata?: string;
+    total_chunks?: number | string;
+    avg_length?: number | string;
+    count?: number | string;
+}
+
+/**
+ * IndexedDB vector item type.
+ */
+interface IndexedDBVectorItem {
+    id: number;
+    vector: number[];
+    text: string;
+    metadata: string;
+}
+
+/**
+ * Similarity search result item.
+ */
+interface SimilarityResult {
+    text: string;
+    metadata: string;
+    similarity: number;
+}
+
+
 // Module-level singleton - ONE database instance for entire worker
 let globalDuckDB: duckdb.AsyncDuckDB | null = null;
+// DuckDB connection type is not exported, using any with eslint-disable
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let globalDuckDBConnection: any = null;
 let globalDuckDBInitialized = false;
 let globalDuckDBInitializing = false; // Prevent concurrent initialization
 
-// Simple DuckDB vector store
+/**
+ * DuckDB-based vector store for storing and searching document embeddings.
+ * 
+ * This class manages a DuckDB database instance with a singleton pattern to ensure
+ * only one database connection exists per worker. It handles document indexing,
+ * similarity search, and persistence to IndexedDB.
+ * 
+ * @example
+ * ```typescript
+ * const embeddings = new HuggingFaceTransformersEmbeddings({ model: 'Xenova/all-MiniLM-L6-v2' });
+ * const vectorStore = new DuckDBVectorStore(embeddings);
+ * await vectorStore.initialize();
+ * await vectorStore.addDocuments(documents);
+ * const results = await vectorStore.similaritySearch('query', 5);
+ * ```
+ */
 class DuckDBVectorStore {
     private embeddings: HuggingFaceTransformersEmbeddings;
     private tableName: string;
 
+    /**
+     * Creates a new DuckDBVectorStore instance.
+     * 
+     * @param embeddings - The embeddings model to use for generating vectors
+     * @param tableName - The name of the table to store vectors in (default: 'vectors')
+     */
     constructor(embeddings: HuggingFaceTransformersEmbeddings, tableName: string = 'vectors') {
         this.embeddings = embeddings;
         this.tableName = tableName;
     }
 
+    /**
+     * Initializes the DuckDB database connection and creates necessary tables.
+     * 
+     * This method implements a singleton pattern to ensure only one database instance
+     * is created per worker. It handles concurrent initialization attempts and loads
+     * persisted data from IndexedDB on first initialization.
+     * 
+     * @throws {Error} If database initialization fails or connection cannot be established
+     * @returns Promise that resolves when initialization is complete
+     */
     async initialize(): Promise<void> {
         // Use global singleton - only create once
         if (globalDuckDBInitialized && globalDuckDB && globalDuckDBConnection) {
@@ -149,9 +217,10 @@ class DuckDBVectorStore {
                     )
                 `);
                 console.log('[DuckDB] Table created/verified');
-            } catch (err: any) {
-                console.error('[DuckDB] Error creating table:', err);
-                throw err;
+            } catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
+                console.error('[DuckDB] Error creating table:', error);
+                throw error;
             }
             
             // Load from IndexedDB (only on first initialization)
@@ -169,6 +238,13 @@ class DuckDBVectorStore {
         }
     }
 
+    /**
+     * Adds documents to the vector store by generating embeddings and storing them in DuckDB.
+     * 
+     * @param docs - Array of Document objects to index
+     * @throws {Error} If DuckDB is not initialized
+     * @returns Promise that resolves when all documents are added and persisted
+     */
     async addDocuments(docs: Document[]): Promise<void> {
         if (!globalDuckDBConnection) {
             throw new Error('DuckDB not initialized');
@@ -194,6 +270,14 @@ class DuckDBVectorStore {
         await this.saveToIndexedDB();
     }
 
+    /**
+     * Performs a similarity search using cosine similarity to find the most relevant documents.
+     * 
+     * @param query - The search query string
+     * @param k - The number of top results to return
+     * @throws {Error} If DuckDB is not initialized
+     * @returns Promise that resolves to an array of the top-k most similar documents
+     */
     async similaritySearch(query: string, k: number): Promise<Document[]> {
         if (!globalDuckDBConnection) {
             throw new Error('DuckDB not initialized');
@@ -206,21 +290,23 @@ class DuckDBVectorStore {
             FROM ${this.tableName}
         `);
         
-        const rows = result.toArray();
-        const similarities = rows.map((row: any) => {
-            const storedVector = Array.isArray(row.vector) ? row.vector : JSON.parse(row.vector || '[]');
+        const rows = result.toArray() as DuckDBRow[];
+        const similarities: SimilarityResult[] = rows.map((row) => {
+            const storedVector = Array.isArray(row.vector) 
+                ? row.vector as number[]
+                : JSON.parse((row.vector as string) || '[]') as number[];
             const similarity = this.cosineSimilarity(queryVector, storedVector);
             return {
-                text: row.text,
-                metadata: row.metadata,
+                text: row.text || '',
+                metadata: row.metadata || '{}',
                 similarity,
             };
         });
         
-        similarities.sort((a: any, b: any) => b.similarity - a.similarity);
+        similarities.sort((a, b) => b.similarity - a.similarity);
         const topK = similarities.slice(0, k);
         
-        return topK.map((item: any) => {
+        return topK.map((item) => {
             const metadata = item.metadata ? JSON.parse(item.metadata) : {};
             return new Document({
                 pageContent: item.text,
@@ -229,6 +315,12 @@ class DuckDBVectorStore {
         });
     }
 
+    /**
+     * Checks if a file with the given name has already been indexed.
+     * 
+     * @param fileName - The name of the file to check
+     * @returns Promise that resolves to true if the file exists, false otherwise
+     */
     async fileExists(fileName: string): Promise<boolean> {
         if (!globalDuckDBConnection) {
             return false;
@@ -254,12 +346,21 @@ class DuckDBVectorStore {
                 }
             }
             return false;
-        } catch (err: any) {
-            console.error('[DuckDB] Error checking file existence:', err);
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('[DuckDB] Error checking file existence:', error);
             return false;
         }
     }
 
+    /**
+     * Retrieves statistics about the indexed documents.
+     * 
+     * @returns Promise that resolves to an object containing:
+     *   - totalDocuments: Number of unique documents indexed
+     *   - totalChunks: Total number of document chunks
+     *   - averageChunkLength: Average character length of chunks
+     */
     async getStats(): Promise<{ totalDocuments: number; totalChunks: number; averageChunkLength: number }> {
         if (!globalDuckDBConnection) {
             return { totalDocuments: 0, totalChunks: 0, averageChunkLength: 0 };
@@ -273,7 +374,7 @@ class DuckDBVectorStore {
                 FROM ${this.tableName}
             `);
             
-            const rows = result.toArray();
+            const rows = result.toArray() as DuckDBRow[];
             const stats = rows[0] || { total_chunks: 0, avg_length: 0 };
             
             // Get unique file count from metadata
@@ -282,11 +383,11 @@ class DuckDBVectorStore {
                 FROM ${this.tableName}
             `);
             
-            const allRows = allResult.toArray();
+            const allRows = allResult.toArray() as DuckDBRow[];
             const uniqueFiles = new Set<string>();
-            allRows.forEach((row: any) => {
+            allRows.forEach((row) => {
                 try {
-                    const metadata = JSON.parse(row.metadata || '{}');
+                    const metadata = JSON.parse((row.metadata || '{}') as string) as { loc?: { source?: string }; source?: string };
                     // Check both loc.source and source for file name
                     const fileName = metadata.loc?.source || metadata.source;
                     if (fileName) {
@@ -302,12 +403,19 @@ class DuckDBVectorStore {
                 totalChunks: Number(stats.total_chunks) || 0,
                 averageChunkLength: Math.round(Number(stats.avg_length) || 0),
             };
-        } catch (err: any) {
-            console.error('[DuckDB] Error getting stats:', err);
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('[DuckDB] Error getting stats:', error);
             return { totalDocuments: 0, totalChunks: 0, averageChunkLength: 0 };
         }
     }
 
+    /**
+     * Clears all indexed documents from DuckDB and deletes the IndexedDB database.
+     * 
+     * @throws {Error} If clearing fails
+     * @returns Promise that resolves when the database is cleared
+     */
     async clearDatabase(): Promise<void> {
         if (!globalDuckDBConnection) {
             console.warn('[DuckDB] No connection to clear');
@@ -341,12 +449,20 @@ class DuckDBVectorStore {
             });
             
             console.log('[DuckDB] Database and IndexedDB cleared successfully');
-        } catch (err: any) {
-            console.error('[DuckDB] Error clearing database:', err);
-            throw err;
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error('[DuckDB] Error clearing database:', error);
+            throw error;
         }
     }
 
+    /**
+     * Calculates cosine similarity between two vectors.
+     * 
+     * @param a - First vector
+     * @param b - Second vector
+     * @returns Cosine similarity value between 0 and 1, or 0 if vectors have different lengths
+     */
     private cosineSimilarity(a: number[], b: number[]): number {
         if (a.length !== b.length) return 0;
         let dotProduct = 0;
@@ -360,6 +476,11 @@ class DuckDBVectorStore {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
+    /**
+     * Saves all vectors from DuckDB to IndexedDB for persistence.
+     * 
+     * @returns Promise that resolves when save is complete (or fails silently)
+     */
     private async saveToIndexedDB(): Promise<void> {
         if (!globalDuckDBConnection) return;
         
@@ -369,12 +490,14 @@ class DuckDBVectorStore {
                 FROM ${this.tableName}
             `);
             
-            const rows = result.toArray();
-            const data = rows.map((row: any) => ({
-                id: row.id,
-                vector: Array.isArray(row.vector) ? row.vector : JSON.parse(row.vector || '[]'),
-                text: row.text,
-                metadata: row.metadata,
+            const rows = result.toArray() as DuckDBRow[];
+            const data: IndexedDBVectorItem[] = rows.map((row) => ({
+                id: (row.id as number) || 0,
+                vector: Array.isArray(row.vector) 
+                    ? row.vector as number[]
+                    : JSON.parse((row.vector as string) || '[]') as number[],
+                text: (row.text as string) || '',
+                metadata: (row.metadata as string) || '{}',
             }));
             
             const request = indexedDB.open('LuminaVectorStore', 1);
@@ -385,14 +508,14 @@ class DuckDBVectorStore {
                     const transaction = db.transaction(['vectors'], 'readwrite');
                     const store = transaction.objectStore('vectors');
                     store.clear();
-                    data.forEach((item: any, idx: number) => {
+                    data.forEach((item, idx) => {
                         store.put({ ...item, id: idx + 1 });
                     });
                     transaction.oncomplete = () => resolve();
                     transaction.onerror = () => reject(transaction.error);
                 };
-                request.onupgradeneeded = (event: any) => {
-                    const db = event.target.result;
+                request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+                    const db = (event.target as IDBOpenDBRequest).result;
                     if (!db.objectStoreNames.contains('vectors')) {
                         db.createObjectStore('vectors', { keyPath: 'id' });
                     }
@@ -403,6 +526,11 @@ class DuckDBVectorStore {
         }
     }
 
+    /**
+     * Loads persisted vectors from IndexedDB into DuckDB.
+     * 
+     * @returns Promise that resolves when load is complete (or fails silently)
+     */
     private async loadFromIndexedDB(): Promise<void> {
         if (!globalDuckDBConnection) return;
         
@@ -411,8 +539,8 @@ class DuckDBVectorStore {
             const db = await new Promise<IDBDatabase>((resolve, reject) => {
                 request.onerror = () => reject(request.error);
                 request.onsuccess = () => resolve(request.result);
-                request.onupgradeneeded = (event: any) => {
-                    const db = event.target.result;
+                request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+                    const db = (event.target as IDBOpenDBRequest).result;
                     if (!db.objectStoreNames.contains('vectors')) {
                         db.createObjectStore('vectors', { keyPath: 'id' });
                     }
@@ -423,8 +551,8 @@ class DuckDBVectorStore {
             const store = transaction.objectStore('vectors');
             const getAllRequest = store.getAll();
             
-            const data = await new Promise<any[]>((resolve, reject) => {
-                getAllRequest.onsuccess = () => resolve(getAllRequest.result || []);
+            const data = await new Promise<IndexedDBVectorItem[]>((resolve, reject) => {
+                getAllRequest.onsuccess = () => resolve((getAllRequest.result || []) as IndexedDBVectorItem[]);
                 getAllRequest.onerror = () => reject(getAllRequest.error);
             });
             
@@ -453,7 +581,7 @@ class DuckDBVectorStore {
 let embeddings: HuggingFaceTransformersEmbeddings | null = null;
 let vectorStore: DuckDBVectorStore | null = null;
 let textSplitter: RecursiveCharacterTextSplitter | null = null;
-let model: any = null;
+let model: TextGenerationPipeline | null = null;
 let isInitialized = false;
 let isInitializing = false; // Prevent concurrent INIT messages
 let isModelLoading = false; // Track if model is currently loading
@@ -536,12 +664,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                         type: 'STATS_RESULT', 
                         payload: stats 
                     });
-                } catch (err: any) {
-                    console.error('[RAG Worker] Initialization error:', err);
+                } catch (err) {
+                    const error = err instanceof Error ? err : new Error(String(err));
+                    console.error('[RAG Worker] Initialization error:', error);
                     self.postMessage({ 
                         type: 'ERROR', 
                         payload: { 
-                            error: err?.message || 'Initialization failed',
+                            error: error.message || 'Initialization failed',
                             errorType: 'INIT'
                         } 
                     });
@@ -568,6 +697,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                 isModelLoading = true;
                 modelLoadPromise = (async () => {
                     try {
+                        // Progress callback with type assertion due to library type mismatch
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const onProgress = (progress: any) => {
                             let progressValue = 0;
                             if (typeof progress === 'number') {
@@ -575,15 +706,17 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                             } else if (typeof progress === 'string') {
                                 const match = progress.match(/(\d+)%/);
                                 if (match) {
-                                    progressValue = parseInt(match[1]) / 100;
+                                    progressValue = parseInt(match[1], 10) / 100;
                                 }
                             } else if (progress && typeof progress === 'object') {
-                                if (progress.loaded !== undefined && progress.total !== undefined) {
-                                    progressValue = progress.loaded / progress.total;
-                                } else if (progress.progress !== undefined) {
-                                    progressValue = typeof progress.progress === 'number' 
-                                        ? progress.progress 
-                                        : progress.progress / 100;
+                                // Type assertion needed due to library ProgressInfo type complexity
+                                const progressObj = progress as { loaded?: number; total?: number; progress?: number | string };
+                                if (progressObj.loaded !== undefined && progressObj.total !== undefined) {
+                                    progressValue = progressObj.loaded / progressObj.total;
+                                } else if (progressObj.progress !== undefined) {
+                                    progressValue = typeof progressObj.progress === 'number' 
+                                        ? progressObj.progress 
+                                        : Number(progressObj.progress) / 100;
                                 }
                             }
                             
@@ -695,11 +828,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                         type: 'STATS_RESULT', 
                         payload: stats 
                     });
-                } catch (err: any) {
+                } catch (err) {
+                    const error = err instanceof Error ? err : new Error(String(err));
                     self.postMessage({ 
                         type: 'ERROR', 
                         payload: { 
-                            error: err?.message || 'Indexing failed',
+                            error: error.message || 'Indexing failed',
                             errorType: 'INDEX_DOCUMENTS'
                         } 
                     });
@@ -744,7 +878,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                         isModelLoading = true;
                         modelLoadPromise = (async () => {
                             try {
-                                const onProgress = (progress: any) => {
+                                const onProgress: ProgressCallback = (progress) => {
                                     let progressValue = 0;
                                     if (typeof progress === 'number') {
                                         progressValue = progress;
@@ -929,11 +1063,12 @@ IMPORTANT RULES:
                         type: 'STATS_RESULT', 
                         payload: stats 
                     });
-                } catch (err: any) {
+                } catch (err) {
+                    const error = err instanceof Error ? err : new Error(String(err));
                     self.postMessage({ 
                         type: 'ERROR', 
                         payload: { 
-                            error: err?.message || 'Failed to get stats',
+                            error: error.message || 'Failed to get stats',
                             errorType: 'GET_STATS'
                         } 
                     });
@@ -963,11 +1098,12 @@ IMPORTANT RULES:
                         type: 'DATABASE_CLEARED',
                         payload: stats
                     });
-                } catch (err: any) {
+                } catch (err) {
+                    const error = err instanceof Error ? err : new Error(String(err));
                     self.postMessage({ 
                         type: 'ERROR', 
                         payload: { 
-                            error: err?.message || 'Failed to clear database',
+                            error: error.message || 'Failed to clear database',
                             errorType: 'CLEAR_DATABASE'
                         } 
                     });
@@ -993,6 +1129,8 @@ IMPORTANT RULES:
                     // Ensure model is loaded
                     if (!model) {
                         // Load model if not already loaded
+                        // Progress callback with type assertion due to library type mismatch
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const onProgress = (progress: any) => {
                             let progressValue = 0;
                             if (typeof progress === 'number') {
@@ -1000,15 +1138,17 @@ IMPORTANT RULES:
                             } else if (typeof progress === 'string') {
                                 const match = progress.match(/(\d+)%/);
                                 if (match) {
-                                    progressValue = parseInt(match[1]) / 100;
+                                    progressValue = parseInt(match[1], 10) / 100;
                                 }
                             } else if (progress && typeof progress === 'object') {
-                                if (progress.loaded !== undefined && progress.total !== undefined) {
-                                    progressValue = progress.loaded / progress.total;
-                                } else if (progress.progress !== undefined) {
-                                    progressValue = typeof progress.progress === 'number' 
-                                        ? progress.progress 
-                                        : progress.progress / 100;
+                                // Type assertion needed due to library ProgressInfo type complexity
+                                const progressObj = progress as { loaded?: number; total?: number; progress?: number | string };
+                                if (progressObj.loaded !== undefined && progressObj.total !== undefined) {
+                                    progressValue = progressObj.loaded / progressObj.total;
+                                } else if (progressObj.progress !== undefined) {
+                                    progressValue = typeof progressObj.progress === 'number' 
+                                        ? progressObj.progress 
+                                        : Number(progressObj.progress) / 100;
                                 }
                             }
                             
@@ -1069,11 +1209,12 @@ IMPORTANT RULES:
                             topic
                         } 
                     });
-                } catch (err: any) {
+                } catch (err) {
+                    const error = err instanceof Error ? err : new Error(String(err));
                     self.postMessage({ 
                         type: 'ERROR', 
                         payload: { 
-                            error: err?.message || 'Failed to generate synthetic data',
+                            error: error.message || 'Failed to generate synthetic data',
                             errorType: 'GENERATE_SYNTHETIC'
                         } 
                     });
@@ -1087,11 +1228,12 @@ IMPORTANT RULES:
                     payload: { error: `Unknown message type: ${type}` } 
                 });
         }
-    } catch (error: any) {
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
         self.postMessage({ 
             type: 'ERROR', 
             payload: { 
-                error: error?.message || 'Unknown error',
+                error: err.message || 'Unknown error',
                 errorType: type 
             } 
         });
