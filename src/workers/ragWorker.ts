@@ -54,11 +54,17 @@ interface SimilarityResult {
 }
 
 
+/**
+ * DuckDB connection interface based on actual usage.
+ * The connection object has a query method that accepts SQL strings.
+ */
+interface DuckDBConnection {
+    query: (sql: string) => Promise<duckdb.ResultSet>;
+}
+
 // Module-level singleton - ONE database instance for entire worker
 let globalDuckDB: duckdb.AsyncDuckDB | null = null;
-// DuckDB connection type is not exported, using any with eslint-disable
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let globalDuckDBConnection: any = null;
+let globalDuckDBConnection: DuckDBConnection | null = null;
 let globalDuckDBInitialized = false;
 let globalDuckDBInitializing = false; // Prevent concurrent initialization
 
@@ -697,9 +703,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
                 isModelLoading = true;
                 modelLoadPromise = (async () => {
                     try {
-                        // Progress callback with type assertion due to library type mismatch
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const onProgress = (progress: any) => {
+                        const onProgress: ProgressCallback = (progress) => {
                             let progressValue = 0;
                             if (typeof progress === 'number') {
                                 progressValue = progress;
@@ -1129,9 +1133,7 @@ IMPORTANT RULES:
                     // Ensure model is loaded
                     if (!model) {
                         // Load model if not already loaded
-                        // Progress callback with type assertion due to library type mismatch
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const onProgress = (progress: any) => {
+                        const onProgress: ProgressCallback = (progress) => {
                             let progressValue = 0;
                             if (typeof progress === 'number') {
                                 progressValue = progress;

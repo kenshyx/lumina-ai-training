@@ -10,7 +10,49 @@ const DEFAULT_MODEL_CONFIG: ModelConfig = {
     engine: 'ml5.js (CharRNN)'
 };
 
-export const useTraining = (initialConfig?: ModelConfig) => {
+/**
+ * Return type for the useTraining hook.
+ */
+interface UseTrainingReturn {
+    /** Whether training is currently in progress */
+    isTraining: boolean;
+    /** Current training progress percentage (0-100) */
+    trainingProgress: number;
+    /** Current epoch number */
+    currentEpoch: number;
+    /** Array of loss values recorded during training */
+    loss: number[];
+    /** Current model configuration */
+    modelConfig: ModelConfig;
+    /** Function to update the model configuration */
+    setModelConfig: (config: ModelConfig) => void;
+    /** Function to start training */
+    startTraining: () => void;
+    /** Function to pause training */
+    pauseTraining: () => void;
+    /** Function to toggle training state */
+    toggleTraining: () => void;
+    /** Function to reset training state and progress */
+    resetTraining: () => void;
+}
+
+/**
+ * Custom hook for managing model training state and progress.
+ * 
+ * This hook manages training state, progress tracking, loss recording, and model configuration.
+ * It simulates training progress with periodic updates and loss calculations.
+ * 
+ * @param initialConfig - Optional initial model configuration (defaults to DEFAULT_MODEL_CONFIG)
+ * @returns Object containing training state and control functions
+ * 
+ * @example
+ * ```tsx
+ * const { isTraining, trainingProgress, startTraining, pauseTraining } = useTraining();
+ * 
+ * startTraining();
+ * ```
+ */
+export const useTraining = (initialConfig?: ModelConfig): UseTrainingReturn => {
     const [isTraining, setIsTraining] = useState<boolean>(false);
     const [trainingProgress, setTrainingProgress] = useState<number>(0);
     const [currentEpoch, setCurrentEpoch] = useState<number>(0);

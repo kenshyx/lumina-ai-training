@@ -3,7 +3,42 @@ import { useState } from 'react';
 import { ModelConfig, AnalysisResult } from '../types';
 import { callGemini } from '../utils/gemini';
 
-export const useModelOptimization = (initialObjective: string = "General Purpose Assistant") => {
+/**
+ * Return type for the useModelOptimization hook.
+ */
+interface UseModelOptimizationReturn {
+    /** The current optimization objective */
+    objective: string;
+    /** Function to update the optimization objective */
+    setObjective: (objective: string) => void;
+    /** Whether hyperparameter optimization is currently in progress */
+    isOptimizing: boolean;
+    /** The current optimization analysis result, or null if no optimization has been performed */
+    analysisResult: AnalysisResult | null;
+    /** Function to optimize hyperparameters based on the current objective */
+    optimizeHyperparameters: (currentConfig: ModelConfig, updateConfig: (config: ModelConfig) => void) => Promise<void>;
+    /** Function to clear the current optimization result */
+    clearAnalysis: () => void;
+}
+
+/**
+ * Custom hook for optimizing model hyperparameters using AI.
+ * 
+ * This hook provides functionality to optimize model hyperparameters (learning rate,
+ * batch size, context window) based on a specified objective using the Gemini API.
+ * It maintains state for optimization progress and results.
+ * 
+ * @param initialObjective - The initial optimization objective (default: "General Purpose Assistant")
+ * @returns Object containing optimization state and functions
+ * 
+ * @example
+ * ```tsx
+ * const { objective, setObjective, optimizeHyperparameters } = useModelOptimization("Fast inference");
+ * 
+ * await optimizeHyperparameters(currentConfig, updateConfig);
+ * ```
+ */
+export const useModelOptimization = (initialObjective: string = "General Purpose Assistant"): UseModelOptimizationReturn => {
     const [objective, setObjective] = useState<string>(initialObjective);
     const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);

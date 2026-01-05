@@ -3,7 +3,36 @@ import { useState } from 'react';
 import { AnalysisResult } from '../types';
 import { callGemini } from '../utils/gemini';
 
-export const useTrainingAnalysis = () => {
+/**
+ * Return type for the useTrainingAnalysis hook.
+ */
+interface UseTrainingAnalysisReturn {
+    /** Whether loss analysis is currently in progress */
+    isAnalyzing: boolean;
+    /** The current analysis result, or null if no analysis has been performed */
+    analysisResult: AnalysisResult | null;
+    /** Function to analyze training loss trends */
+    analyzeLoss: (loss: number[]) => Promise<void>;
+    /** Function to clear the current analysis result */
+    clearAnalysis: () => void;
+}
+
+/**
+ * Custom hook for analyzing training loss trends using AI.
+ * 
+ * This hook provides functionality to analyze training loss data and generate
+ * insights using the Gemini API. It maintains state for analysis progress and results.
+ * 
+ * @returns Object containing analysis state and functions
+ * 
+ * @example
+ * ```tsx
+ * const { isAnalyzing, analysisResult, analyzeLoss, clearAnalysis } = useTrainingAnalysis();
+ * 
+ * await analyzeLoss([0.5, 0.4, 0.3, 0.2]);
+ * ```
+ */
+export const useTrainingAnalysis = (): UseTrainingAnalysisReturn => {
     const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
