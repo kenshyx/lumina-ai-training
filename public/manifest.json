@@ -10,12 +10,6 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/lumina.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
@@ -38,8 +32,9 @@
       "url": "/?tab=rag",
       "icons": [
         {
-          "src": "/lumina.svg",
-          "sizes": "192x192"
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     },
@@ -50,8 +45,9 @@
       "url": "/?tab=data",
       "icons": [
         {
-          "src": "/lumina.svg",
-          "sizes": "192x192"
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     }
