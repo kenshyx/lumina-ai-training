@@ -8,4 +8,5 @@ export { Dashboard } from './Dashboard';
 export { DataTab } from './DataTab';
 export { RAGTab } from './RAGTab';
 export { SettingsTab } from './SettingsTab';
+export { AuthButton } from './AuthButton';
 

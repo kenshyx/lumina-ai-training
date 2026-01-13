@@ -45,3 +45,22 @@ export interface NavItemProps {
     setActiveTab: (id: TabType) => void;
 }
 
+/**
+ * AT Protocol authentication session information.
+ */
+export interface ATProtoSession {
+    /** User's DID (Decentralized Identifier) */
+    did: string;
+    /** User's handle (e.g., username.bsky.social) */
+    handle: string;
+    /** Access JWT token */
+    accessJwt: string;
+    /** Refresh JWT token */
+    refreshJwt: string;
+    /** Email address (if available) */
+    email?: string;
+    /** Display name (if available) */
+    displayName?: string;
+    /** Avatar URL (if available) */
+    avatar?: string;
+}

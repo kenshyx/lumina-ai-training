@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@atproto/api": "^0.18.14",
+    "@atproto/oauth-client-browser": "^0.3.39",
     "@duckdb/duckdb-wasm": "^1.30.0",
     "@huggingface/transformers": "^3.8.1",
     "@langchain/community": "^1.1.1",

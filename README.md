@@ -44,6 +44,13 @@ A modern, browser-based RAG (Retrieval-Augmented Generation) application for bui
 - **Service Worker**: Automatic caching of static assets for faster loads
 - **Share Target**: Accept files shared from other apps (mobile)
 
+### 🔐 AT Protocol Authentication
+- **OAuth Sign-In**: Sign in with your Bluesky account using OAuth 2.0
+- **Password Sign-In**: Alternative password-based authentication
+- **Session Persistence**: Automatically restores your session on page reload
+- **Profile Display**: Shows your username and avatar when signed in
+- **Secure Token Management**: OAuth tokens are securely managed by the browser
+
 ## 🛠️ Tech Stack
 
 ### Core
@@ -77,12 +84,35 @@ A modern, browser-based RAG (Retrieval-Augmented Generation) application for bui
    npm install
    ```
 
-3. **Start development server**
+3. **Configure environment variables (optional)**
+   
+   Create a `.env` file in the root directory:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   For OAuth authentication, set the following variables:
+   ```env
+   # AT Protocol OAuth Configuration
+   # These values must be HTTPS URLs with domain names (not IP addresses or loopback hosts)
+   
+   # OAuth client_id - URL pointing to your client metadata JSON
+   # Must be HTTPS with a domain name (e.g., https://yourdomain.com/client-metadata.json)
+   VITE_ATPROTO_CLIENT_ID=https://lumina-rag.app/client-metadata.json
+   
+   # OAuth client_uri - Your application's URI
+   # Must be HTTPS with a domain name (e.g., https://yourdomain.com)
+   VITE_ATPROTO_CLIENT_URI=https://lumina-rag.app
+   ```
+   
+   **Note for Local Development**: OAuth requires HTTPS URLs with domain names. For local development, you'll need to proxy your app through a service like [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) to get an HTTPS URL. See the [OAuth Local Development](#oauth-local-development) section below.
+
+4. **Start development server**
    ```bash
    npm run dev
    ```
 
-4. **Build for production**
+5. **Build for production**
    ```bash
    npm run build
    ```
@@ -123,7 +153,15 @@ A modern, browser-based RAG (Retrieval-Augmented Generation) application for bui
 - You can ask follow-up questions that reference previous messages
 - Memory is automatically managed (last 10 messages)
 
-### 7. Install as PWA (Optional)
+### 7. Sign In with AT Protocol (Optional)
+- Click the **Sign In** button in the header
+- Choose **OAuth** (recommended) or **Password** authentication
+- For OAuth: Enter your Bluesky handle and authorize the app
+- For Password: Enter your Bluesky handle/email and password (or app password)
+- Your session persists across page reloads
+- Your username and avatar are displayed when signed in
+
+### 8. Install as PWA (Optional)
 - Look for the **Install App** button in the header (when available)
 - Click to install Lumina RAG as a standalone app
 - Works on desktop and mobile devices
@@ -170,6 +208,82 @@ This keeps the main thread responsive and provides a smooth user experience.
 - **Max Tokens**: 256 (for queries), 512 (for synthetic generation)
 - **Chunk Size**: Configurable (default: 500 characters)
 - **Chunk Overlap**: Configurable (default: 50 characters)
+
+### OAuth Configuration
+- **Client ID**: Must be an HTTPS URL pointing to your client metadata JSON file
+- **Client URI**: Must be an HTTPS URL with a domain name (not IP or localhost)
+- **Redirect URIs**: Can use HTTP with loopback IPs (e.g., `http://127.0.0.1:5173`) per RFC 8252
+- **Service URL**: Defaults to `https://bsky.social` (Bluesky)
+
+### OAuth Local Development
+
+OAuth requires HTTPS URLs with domain names (not `localhost` or IP addresses). For local development, you need to proxy your app through a tunneling service:
+
+#### Using ngrok
+
+1. **Install ngrok**
+   ```bash
+   # macOS
+   brew install ngrok
+   
+   # Or download from https://ngrok.com/download
+   ```
+
+2. **Start your development server**
+   ```bash
+   npm run dev
+   ```
+
+3. **Start ngrok tunnel**
+   ```bash
+   ngrok http 5173
+   ```
+
+4. **Update your `.env` file** with the ngrok HTTPS URL:
+   ```env
+   VITE_ATPROTO_CLIENT_ID=https://your-ngrok-url.ngrok.io/client-metadata.json
+   VITE_ATPROTO_CLIENT_URI=https://your-ngrok-url.ngrok.io
+   ```
+
+5. **Restart your development server** to load the new environment variables
+
+6. **Access your app** through the ngrok URL (e.g., `https://your-ngrok-url.ngrok.io`)
+
+#### Using cloudflared
+
+1. **Install cloudflared**
+   ```bash
+   # macOS
+   brew install cloudflare/cloudflare/cloudflared
+   
+   # Or download from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/
+   ```
+
+2. **Start your development server**
+   ```bash
+   npm run dev
+   ```
+
+3. **Start cloudflared tunnel**
+   ```bash
+   cloudflared tunnel --url http://localhost:5173
+   ```
+
+4. **Update your `.env` file** with the cloudflared HTTPS URL:
+   ```env
+   VITE_ATPROTO_CLIENT_ID=https://your-cloudflared-url.trycloudflare.com/client-metadata.json
+   VITE_ATPROTO_CLIENT_URI=https://your-cloudflared-url.trycloudflare.com
+   ```
+
+5. **Restart your development server** to load the new environment variables
+
+6. **Access your app** through the cloudflared URL
+
+**Important Notes:**
+- The tunneling service URL changes each time you restart it (unless using a paid plan)
+- You'll need to update your `.env` file and restart the dev server each time
+- For production, use a stable domain name with proper SSL certificates
+- Password-based authentication works without OAuth configuration
 
 ### Vite Configuration
 The app is configured with:
@@ -294,6 +408,13 @@ lumina-rag/
 - Service worker only registers in production builds
 - Clear browser cache if service worker updates don't apply
 - Icon files (icon-192.png, icon-512.png) are optional but recommended for better PWA experience
+
+### OAuth Authentication Issues
+- **OAuth not working locally**: OAuth requires HTTPS with a domain name. Use ngrok or cloudflared to proxy your local server (see [OAuth Local Development](#oauth-local-development))
+- **"OAuth client not initialized"**: Wait a moment for the OAuth client to initialize, or check browser console for errors
+- **Callback not captured**: Ensure your redirect URI matches exactly what's configured in your OAuth client metadata
+- **Session not persisting**: Check browser localStorage permissions and ensure cookies are enabled
+- **Password authentication works**: If OAuth fails, you can always use password-based sign-in as a fallback
 
 ## 📄 License
 

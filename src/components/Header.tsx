@@ -1,5 +1,6 @@
 import { usePWAInstall } from '../hooks';
 import { LuminaLogo } from './LuminaLogo';
+import { AuthButton } from './AuthButton';
 
 interface HeaderProps {
     isTraining: boolean;
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({ isTraining }) => {
                 </div>
             </div>
             <div className="flex items-center gap-3">
+                <AuthButton />
                 {canInstall && !isInstalled && (
                     <button
                         onClick={promptInstall}
